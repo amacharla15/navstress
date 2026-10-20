@@ -4,13 +4,21 @@
   <name>navstress_scenarios</name>
   <version>0.1.0</version>
   <description>Scenario schema (validation, clamping, hashing) and the scenario_manager, noise_injector and obstacle_mover nodes.</description>
-  <maintainer email="amacharla15@users.noreply.github.com">amacharla15</maintainer>
+  <maintainer email="amacharla@csuchico.edu">Akshith Macharla</maintainer>
   <license>Apache-2.0</license>
 
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>navstress_interfaces</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-pil</exec_depend>
   <exec_depend>python3-pydantic</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>sensor_msgs_py</exec_depend>
+  <exec_depend>simulation_interfaces</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

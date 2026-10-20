@@ -15,7 +15,7 @@ The full build spec is [SPEC.md](SPEC.md); working rules are in [CLAUDE.md](CLAU
 | --- | --- | --- |
 | 0 | colcon workspace, interfaces, CI | done |
 | 1 | schema, agent loop, report (pure Python) | done |
-| 2 | ROS nodes + fakesim end-to-end test | not started |
+| 2 | ROS nodes + fakesim end-to-end test | done |
 | 3 | pod setup script + RUNPOD.md | not started |
 | 4–7 | Isaac Sim runs on a GPU pod | not started (needs the pod) |
 
@@ -32,7 +32,22 @@ colcon test && colcon test-result --verbose
 pipx run ruff==0.17.1 check . && pipx run ruff==0.17.1 format --check .
 ```
 
-CI runs the same steps (`.github/workflows/ci.yml`).
+CI runs the same steps (`.github/workflows/ci.yml`), including an end-to-end
+launch test: the fake simulator, every NavStress node, the agent with a mock LLM over
+the RunBatch action, MCAP bags, results files and the report.
+
+To watch the CI pipeline by hand:
+
+```bash
+source install/setup.bash
+ros2 launch navstress_bringup fakesim.launch.py results_dir:=$PWD/results
+# second terminal
+ros2 run navstress_agent stress_agent --mock --results-dir $PWD/results \
+  --goals install/navstress_fakesim/share/navstress_fakesim/config/goals.yaml
+ros2 run navstress_report report --agent results/<agent_run_id> --out-md /tmp/fakesim.md
+```
+
+Fakesim output tests the plumbing only; it is not a navigation result.
 
 ## Docs
 

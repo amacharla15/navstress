@@ -1,0 +1,13 @@
+# CI-only world for navstress_fakesim: a 14 m x 8 m room with two shelves.
+# It is not the Isaac Sim warehouse and nothing measured in it describes Nav2.
+bounds: [-1.0, 13.0, -4.0, 4.0]  # xmin, xmax, ymin, ymax (map frame, m)
+walls:                           # axis-aligned boxes [x0, y0, x1, y1]
+  - [3.0, 2.6, 8.0, 3.3]
+  - [3.0, -3.3, 8.0, -2.6]
+start: [0.0, 0.0, 0.0]           # x, y, yaw after every reset
+robot_half_size: 0.3             # square footprint; matches the monitor's fakesim footprint
+lidar_height: 0.2                # obstacles shorter than this are invisible to scan and planner
+lidar_range: 10.0
+lidar_rays: 360
+grid_resolution: 0.1
+plan_margin: 0.15

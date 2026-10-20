@@ -12,10 +12,14 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
-    maintainer="amacharla15",
-    maintainer_email="amacharla15@users.noreply.github.com",
+    maintainer="Akshith Macharla",
+    maintainer_email="amacharla@csuchico.edu",
     description="LLM stress-test agent that proposes scenarios and narrows onto failures.",
     license="Apache-2.0",
     extras_require={"test": ["pytest"]},
-    entry_points={"console_scripts": []},
+    entry_points={
+        "console_scripts": [
+            "stress_agent = navstress_agent.cli:main",
+        ]
+    },
 )

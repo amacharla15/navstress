@@ -140,6 +140,106 @@ docs or sources contradict SPEC.md, the docs win and the change is recorded here
   ring and "after" a dot, so identity never rests on color alone. Every chart has a
   table with the same numbers next to it.
 
+## D16 — Our monitor is `navstress_collision_monitor` (Phase 2)
+
+- SPEC calls the C++ node "collision_monitor". Carter's Nav2 params already run Nav2's
+  own node named `collision_monitor`, and two nodes with one name break parameter
+  services and logging. The package and executable keep the SPEC name; the node is
+  `navstress_collision_monitor`.
+
+## D17 — QoS, topic by topic (Phase 2)
+
+| Topic | QoS | Why |
+| --- | --- | --- |
+| lidar scans/clouds, odometry (subscriptions) | Sensor Data (best effort, keep last 5) | Isaac Sim publishes sensors best effort; a reliable subscriber never matches. Best effort also matches reliable publishers. |
+| noise_injector output | Sensor Data | Nav2's costmaps and AMCL subscribe with SensorDataQoS. |
+| `/navstress/clearance` | best effort | A stream where only the newest value matters. |
+| `/navstress/collision_events` | reliable, depth 10/50 | Rare and must not be dropped; each one fails an episode. |
+| `/navstress/active_scenario` | reliable, transient local, depth 1 | Latched: a node that starts late still gets the active scenario. |
+| `/initialpose` | reliable (default) | AMCL subscribes with SystemDefaultsQoS (`amcl_node.cpp`). |
+| rosbag2 recorder | per-topic overrides file | Without it the recorder can subscribe RELIABLE before discovering a publisher and silently record nothing from best-effort topics. The end-to-end test caught exactly this (`/scan_raw` and `/odom` missing from bags). |
+
+## D18 — Noise goes into what Nav2 sees; clearance comes from clean data (Phase 2)
+
+- The noise injector sits between the sensor and Nav2. The collision monitor reads
+  the clean topic, so "how close did the robot really get" doesn't degrade along with
+  the perception being stress-tested.
+- With both noise parameters at zero the relay forwards the same message object, so
+  baseline and noise scenarios pass through an identical topology.
+
+## D19 — ApplyScenario refuses to run something other than the spec (Phase 2)
+
+- Order: reset → spawn → (robot placement) → noise → Nav2 overrides → announce →
+  initial pose → clear costmaps → settle.
+- Hard failures (episode becomes `setup_failed`, nothing runs): reset or spawn
+  fails, a noise injector is unreachable, an override's Nav2 node is unreachable, or a
+  scenario sets a start pose while `robot_entity` is empty. Running anyway would
+  record a result for a scenario that didn't happen.
+- Soft steps: costmap clearing is skipped (and logged) when the service is missing,
+  because a missing service there doesn't change the scenario.
+- Overrides are re-applied every scenario, with launch values (read once from the
+  Nav2 node) for anything the scenario doesn't override, so no override leaks into
+  the next episode.
+- Robot teleport is off by default: Isaac Sim's `SetEntityState` moves a prim with an
+  `XformPrim` unless the prim has `PhysicsRigidBodyAPI`, and whether that teleports an
+  articulated robot correctly is unverified (OPEN_QUESTIONS Q7). Episodes start where
+  `ResetSimulation` (timeline stop/play) puts the robot.
+
+## D20 — Obstacle USD files: static colliders, kinematic bodies for movers (Phase 2)
+
+- Static obstacles are a scaled `Cube`/`Cylinder` with `PhysicsCollisionAPI`. Moving
+  ones also get `PhysicsRigidBodyAPI` with `physics:kinematicEnabled = 1`, PhysX's way
+  of representing externally driven objects. Files are named by content hash and
+  written atomically.
+- Checked with Pixar's `usd-core` 26.8 (PyPI) in the sandbox: both variants open, have
+  the intended schemas, and their bounding boxes match the requested size with the
+  base on z = 0. That check found that an empty `prepend apiSchemas = []` is a USDA
+  parse error, which the generator now avoids; a unit test guards it.
+
+## D21 — Episode outcome rules (Phase 2)
+
+- Collision beats everything: an episode with a collision event fails as
+  `collision`, even if Nav2 later reports success. With `stop_on_collision` (default)
+  the goal is cancelled at the first event.
+- `stuck`: the robot stayed within `stuck_radius_m` for the whole of
+  `stuck_window_s` (30 s on the pod). That is longer than Carter's Nav2 progress
+  checker (0.5 m in 10 s), so Nav2's own recoveries get their chance first.
+- `timeout`: sim-time `episode_timeout_s`, plus a wall-clock backstop
+  (3 × timeout + 60 s) in case the sim clock stalls.
+- `nav2_aborted`: Nav2 aborted, rejected, or cancelled the goal on its own.
+- Path length integrates odometry, ignoring steps under 1 cm (sensor jitter); final
+  distance uses Nav2 feedback's `current_pose` in the map frame.
+
+## D22 — One MCAP bag per episode via `ros2 bag record` (Phase 2)
+
+- A subprocess keeps recording off the runner's executor threads, uses the
+  documented CLI (`-s mcap`, `--topics`, `--use-sim-time`,
+  `--qos-profile-overrides-path`, all checked with `ros2 bag record --help` on
+  Jazzy), and is stopped with SIGINT so the MCAP summary is written.
+
+## D23 — The fake simulator and what it can't prove (Phase 2)
+
+- `navstress_fakesim` serves the `simulation_interfaces` services NavStress uses,
+  publishes a clean scan, odometry and TF, and runs a fake `NavigateToPose` server
+  over a 2D world: walls, obstacles, a lidar that only sees obstacles at least 0.2 m
+  tall, a planner that only avoids what that lidar sees, and a robot that can't move
+  into anything. Its noise rule (abort probability rising with noise) is invented.
+- It proves the wiring: services, actions, QoS, TF, bags, result files, the agent
+  loop and the report all work together. It proves nothing about Nav2, Isaac Sim or
+  the hypothesis. Its numbers never go into README.md or docs/RESULTS.md as findings,
+  and the report labels any fakesim run with a FAKESIM banner.
+
+## D24 — Test isolation (Phase 2)
+
+- The C++ node test uses `ament_add_ros_isolated_gtest`; the end-to-end launch test
+  reserves a `ROS_DOMAIN_ID` with `domain_coordinator` before launching. Parallel
+  `colcon test` jobs on one machine therefore can't see each other's topics.
+
+## D25 — A run id is written once (Phase 2)
+
+- RunBatch refuses a `run_id` whose `results.csv` already exists. Appending a second
+  batch to an old run would mix code versions and configs under one metadata file.
+
 ## Dependencies
 
 One line per dependency beyond ROS core, as CLAUDE.md requires.
@@ -153,3 +253,16 @@ One line per dependency beyond ROS core, as CLAUDE.md requires.
 | `python3-pil` | navstress_scenarios | Decodes the map PNG/PGM image the same way map_server does. |
 | `python3-matplotlib` | navstress_report | Renders the report charts to PNG headlessly. |
 | `python3-pytest` | all Python packages (test) | Test runner colcon uses for ament_python packages. |
+| `rclpy`, `rclcpp`, `rcl_interfaces`, `action_msgs` | nodes | ROS 2 client libraries; parameter and action status types. |
+| `geometry_msgs`, `sensor_msgs`, `nav_msgs`, `std_msgs` | nodes, interfaces | Standard poses, scans, clouds, odometry. |
+| `sensor_msgs_py` | navstress_scenarios | Reads/writes PointCloud2 as NumPy for the cloud noise path. |
+| `nav2_msgs` | scenarios, eval, fakesim | `NavigateToPose` action and `ClearEntireCostmap` service. |
+| `simulation_interfaces` | scenarios, fakesim | The standard simulator-control API Isaac Sim implements (SPEC). |
+| `tf2`, `tf2_ros`, `tf2_geometry_msgs` | navstress_monitor | Sensor-to-base transforms for clearance. |
+| `tf2_ros_py` | navstress_fakesim | Python TF broadcasters for the fake robot. |
+| `ros2bag`, `rosbag2_storage_mcap` | navstress_eval | Per-episode MCAP recording (SPEC). |
+| `python3-yaml` | navstress_eval | Writes the rosbag2 QoS override file. |
+| `ament_index_python`, `launch`, `launch_ros` | bringup, fakesim | Finding installed config; launch files. |
+| `ament_cmake_gtest`, `ament_cmake_ros` | navstress_monitor (test) | gtest, and domain-isolated gtest for the node test. |
+| `launch_testing`, `launch_testing_ament_cmake` | navstress_bringup (test) | The end-to-end launch test (SPEC). |
+| `domain_coordinator`, `rosbag2_py` | navstress_bringup (test) | Private ROS domain for the launch test; reading recorded bags back. |

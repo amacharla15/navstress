@@ -12,13 +12,16 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
-    maintainer="amacharla15",
-    maintainer_email="amacharla15@users.noreply.github.com",
+    maintainer="Akshith Macharla",
+    maintainer_email="amacharla@csuchico.edu",
     description="Scenario schema plus scenario_manager, noise_injector, obstacle_mover nodes.",
     license="Apache-2.0",
     extras_require={"test": ["pytest"]},
     entry_points={
         "console_scripts": [
+            "scenario_manager = navstress_scenarios.scenario_manager:main",
+            "noise_injector = navstress_scenarios.noise_injector:main",
+            "obstacle_mover = navstress_scenarios.obstacle_mover:main",
             "sample_goals = navstress_scenarios.goals:main",
             "make_baseline = navstress_scenarios.generate:main",
         ]

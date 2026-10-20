@@ -4,10 +4,18 @@
   <name>navstress_eval</name>
   <version>0.1.0</version>
   <description>eval_runner node: RunEpisode/RunBatch action servers, metrics and results files.</description>
-  <maintainer email="amacharla15@users.noreply.github.com">amacharla15</maintainer>
+  <maintainer email="amacharla@csuchico.edu">Akshith Macharla</maintainer>
   <license>Apache-2.0</license>
 
+  <exec_depend>action_msgs</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>navstress_interfaces</exec_depend>
   <exec_depend>navstress_scenarios</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>ros2bag</exec_depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

@@ -4,7 +4,7 @@
   <name>navstress_interfaces</name>
   <version>0.1.0</version>
   <description>Messages, services and actions shared by the NavStress nodes.</description>
-  <maintainer email="amacharla15@users.noreply.github.com">amacharla15</maintainer>
+  <maintainer email="amacharla@csuchico.edu">Akshith Macharla</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

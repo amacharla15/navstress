@@ -12,10 +12,15 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
-    maintainer="amacharla15",
-    maintainer_email="amacharla15@users.noreply.github.com",
+    maintainer="Akshith Macharla",
+    maintainer_email="amacharla@csuchico.edu",
     description="eval_runner node: RunEpisode/RunBatch action servers, metrics and results files.",
     license="Apache-2.0",
     extras_require={"test": ["pytest"]},
-    entry_points={"console_scripts": []},
+    entry_points={
+        "console_scripts": [
+            "eval_runner = navstress_eval.eval_runner:main",
+            "run_batch = navstress_eval.batch_client:main",
+        ]
+    },
 )

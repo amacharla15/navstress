@@ -1,0 +1,60 @@
+# NavStress nodes wired to navstress_fakesim (CI). Not used with Isaac Sim.
+fake_sim:
+  ros__parameters:
+    robot_entity: /fake_robot
+    speed_mps: 1.5
+
+scenario_manager:
+  ros__parameters:
+    entity_prefix: /navstress_
+    asset_cache_dir: /tmp/navstress_assets
+    map_to_world: [0.0, 0.0, 0.0]
+    robot_entity: /fake_robot
+    noise_injector_nodes: [/noise_injector]
+    nav_override_targets: [""]      # the fake has no Nav2 parameters to override
+    publish_initial_pose: false     # no AMCL in the fake
+    default_start: [0.0, 0.0, 0.0]
+    clear_costmap_services: [""]    # no costmaps in the fake
+    settle_time_s: 0.3
+
+noise_injector:
+  ros__parameters:
+    message_type: LaserScan
+    input_topic: /scan_raw
+    output_topic: /scan
+
+obstacle_mover:
+  ros__parameters:
+    rate_hz: 10.0
+    entity_prefix: /navstress_
+    map_to_world: [0.0, 0.0, 0.0]
+
+eval_runner:
+  ros__parameters:
+    simulator: fakesim
+    simulator_version: navstress_fakesim 0.1.0
+    odom_topic: /odom
+    bag_topics:
+      - /tf
+      - /tf_static
+      - /scan_raw
+      - /scan
+      - /odom
+      - /navstress/clearance
+      - /navstress/collision_events
+      - /navstress/active_scenario
+    # Subscribe best effort to best-effort publishers, or rosbag2 may record nothing.
+    bag_best_effort_topics: [/scan_raw, /scan, /odom, /navstress/clearance]
+    bag_latched_topics: [/tf_static, /navstress/active_scenario]
+    bag_start_delay_s: 0.5
+    apply_timeout_s: 30.0
+    stuck_window_s: 8.0
+    stuck_radius_m: 0.1
+
+navstress_collision_monitor:
+  ros__parameters:
+    # The clean scan: noise is injected into what navigation sees, not into the
+    # measurement of how close the robot really got.
+    scan_topics: [/scan_raw]
+    odom_topic: /odom
+    footprint: "[[0.3, 0.3], [0.3, -0.3], [-0.3, -0.3], [-0.3, 0.3]]"

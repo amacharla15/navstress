@@ -12,10 +12,14 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
-    maintainer="amacharla15",
-    maintainer_email="amacharla15@users.noreply.github.com",
+    maintainer="Akshith Macharla",
+    maintainer_email="amacharla@csuchico.edu",
     description="Turns results files into charts, docs/RESULTS.md and a static site.",
     license="Apache-2.0",
     extras_require={"test": ["pytest"]},
-    entry_points={"console_scripts": ["report = navstress_report.cli:main"]},
+    entry_points={
+        "console_scripts": [
+            "report = navstress_report.cli:main",
+        ]
+    },
 )

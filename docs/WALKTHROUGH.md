@@ -436,3 +436,312 @@ narrowing, chart rendering) and the dependency table.
 *Q: Why list dependencies in a decisions file?* — A: CLAUDE.md requires a one-line
 reason for each. Unexplained dependencies are how a small project ends up with a
 large attack surface.
+
+---
+
+## Phase 2 — ROS nodes, fake simulator, end-to-end test
+
+Build/test status for this phase: `colcon build` and `colcon test` pass in the local
+Jazzy container: 181 results, 0 failures, 7 skipped. The skips are `ament_cppcheck`,
+which skips by default on cppcheck 2.x. That includes the end-to-end launch test
+(about 2 minutes). The CLIs (`stress_agent --mock`, `make_baseline`, `run_batch`,
+`report`) were also run by hand against the fake simulator. None of this has touched
+Isaac Sim or Nav2; that is Phase 4.
+
+### src/navstress_scenarios
+
+**`navstress_scenarios/conversions.py`** — Converts a validated ScenarioSpec to the
+ROS message and back, plus yaw↔quaternion. On the way back the message is validated
+again and its `config_hash` must match its content, or it is rejected.
+*Q: Why re-validate a message that was built from a validated spec?* — A: Messages
+cross process boundaries and can be hand-written with `ros2 action send_goal`.
+Checking the hash on arrival means a result row can never carry a hash that doesn't
+describe what actually ran.
+
+**`navstress_scenarios/usd_assets.py`** — Writes each obstacle size as a small USDA
+file (scaled unit Cube or Cylinder, base on the floor, collision enabled, kinematic
+rigid body if it moves), named by content hash and written atomically. Also reads
+the `navstress_*` metadata back, which is how the fake simulator learns obstacle
+sizes.
+*Q: Why files instead of sending geometry in the spawn request?* — A: Isaac Sim's
+`isaacsim.ros2.sim_control` spawns from a USD URI and ignores `resource_string`
+(checked in its 6.2.0 source). Isaac Sim and NavStress share the pod's filesystem,
+so a path is all it needs.
+
+**`navstress_scenarios/noise.py`** — Pure functions: Gaussian noise on valid
+LaserScan returns (clipped to the sensor range, invalid returns untouched), dropouts
+as +inf ("no return" in REP 117), and the PointCloud2 version that moves each point
+along its ray.
+*Q: Why move points along the ray rather than adding x/y/z noise?* — A: A lidar
+measures range along each beam. Its error is in range, not sideways.
+
+**`navstress_scenarios/motion.py`** — Back-and-forth position along a segment at
+constant speed, and the map→world offset transform.
+*Q: Why compute position from elapsed time instead of integrating velocity?* — A:
+It can't drift, and the same scenario puts the obstacle in the same place at the
+same time after the goal is sent.
+
+**`navstress_scenarios/rosutil.py`** — Blocking service calls with timeouts from
+inside callbacks, and get/set of another node's parameters through its standard
+parameter services.
+*Q: Why doesn't polling a future inside a service callback deadlock?* — A: The nodes
+use a MultiThreadedExecutor with a reentrant callback group, so the reply is handled
+on another thread while this one waits. With a single-threaded executor it would
+deadlock.
+
+**`navstress_scenarios/noise_injector.py`** — Relays LaserScan or PointCloud2
+(`message_type`) from `input_topic` to `output_topic` with the current noise.
+`gaussian_std_m`, `dropout_prob` and `seed` are ROS parameters with range
+descriptors (the same ranges as the schema). The scenario manager sets them per
+scenario, and a new seed re-seeds the generator. Zero noise forwards the message
+untouched.
+*Q: Why Sensor Data QoS on the output too?* — A: Nav2's costmap layers and AMCL
+subscribe with SensorDataQoS. Publishing best effort keeps the relay behaving like
+the sensor it replaces.
+
+**`navstress_scenarios/obstacle_mover.py`** — Listens on the latched
+`/navstress/active_scenario` topic and, at `rate_hz`, sends `SetEntityState` for
+each moving obstacle. It never queues a second request for an obstacle whose last
+one hasn't been answered.
+*Q: Why not queue every update?* — A: If the simulator is slower than the update
+rate, a queue grows without bound and the obstacle lags further and further behind
+where the scenario says it is. Skipping keeps it as current as the simulator allows.
+
+**`navstress_scenarios/scenario_manager.py`** — The `/navstress/apply_scenario`
+service: reset, spawn all obstacles in one `SpawnEntities` call with fixed names,
+optional robot placement, noise parameters, Nav2 overrides (with launch values
+restored for anything not overridden), announce on `/navstress/active_scenario`,
+`/initialpose` for AMCL, clear costmaps, settle. Anything that would make the run
+differ from the spec fails the call.
+*Q: Why republish `/initialpose` after every reset?* — A: Isaac Sim's reset stops
+and replays the timeline, putting the robot back at its authored pose, while AMCL
+still believes it is wherever the last episode ended. Without a fresh initial pose
+the next episode would start mislocalized.
+
+**`test/test_ros_pieces.py`** — 15 tests: spec↔message round trip with and without a
+start pose, tamper rejection, quaternions, noise statistics/dropout rate/range
+clipping/reproducibility, ray-direction preservation for clouds, shuttle motion,
+map→world, USD content (including the empty-`apiSchemas` regression), asset caching
+and metadata.
+*Q: How was the USD validated if Isaac Sim isn't available?* — A: With Pixar's
+`usd-core` from PyPI: both variants open, have the right schemas and bounding boxes.
+That found a real parse error. The unit test pins the fix; the USD library itself
+isn't a CI dependency.
+
+**`package.xml`, `setup.py` (changed)** — ROS runtime deps and the
+`scenario_manager`, `noise_injector`, `obstacle_mover` executables.
+*Q: Why are the nodes plain `main()` entry points rather than components?* — A:
+These are Python nodes, which can't be composed into one process the way C++
+components can. Separate processes keep a crash in one from taking down the others.
+
+### src/navstress_eval
+
+**`navstress_eval/eval_runner.py`** — The `/navstress/run_episode` and
+`/navstress/run_batch` action servers. Per episode: ApplyScenario, start the bag,
+send `NavigateToPose`, then watch at 10 Hz for Nav2's result, a collision event, the
+stuck detector, the sim-time timeout or the wall-clock backstop (cancelling the goal
+when it stops the episode itself). Then stop the bag, score, publish on
+`/navstress/episode_results` and append the CSV row. Batches validate every scenario
+up front, write `scenarios.jsonl` and metadata, refuse to reuse a run id, and
+support cancellation between episodes.
+*Q: Why does a collision fail the episode even if Nav2 reaches the goal?* — A: In a
+warehouse, reaching the goal by hitting a pallet is not a pass. Counting it as
+success would hide exactly the failures this project is looking for.
+
+**`navstress_eval/episode.py`** — ROS-free bookkeeping: path length with a jitter
+threshold, the stuck detector (no progress across a full window), and the outcome
+rules with their priority order.
+*Q: Why is the stuck window longer than Nav2's progress checker?* — A: Nav2 should
+get to run its recoveries first; "stuck" here means those recoveries are looping
+without Nav2 giving up.
+
+**`navstress_eval/bag_recorder.py`** — Starts `ros2 bag record -s mcap` for one
+episode in its own process session with a QoS override file, waits for discovery,
+and stops it with SIGINT so the MCAP file is finalized.
+*Q: What went wrong before the QoS override file existed?* — A: The end-to-end test
+found bags missing `/scan_raw` and `/odom`. The recorder had subscribed RELIABLE to
+best-effort publishers, which never match, and ROS only prints a warning. Now every
+best-effort topic is subscribed best effort and latched topics transient-local.
+
+**`navstress_eval/batch_client.py`** — The RunBatch action client used by the agent
+and by the `run_batch` CLI, which runs a `scenarios.jsonl` file (optionally checked
+against a goal set) as one batch.
+*Q: Why does the client have no timeout on the batch result?* — A: A 50-episode batch
+on Isaac Sim takes about an hour. A client timeout would abandon a healthy batch;
+the per-episode timeouts on the server already bound each episode.
+
+**`navstress_eval/conversions.py`** — EpisodeResult message ↔ CSV row dict, keyed by
+the one `RESULT_FIELDS` list.
+*Q: Why derive both directions from `RESULT_FIELDS`?* — A: The CSV, the message and
+the report then can't disagree about which columns exist.
+
+**`test/test_episode.py`** — Path integration with jitter, stuck detection
+(including a sliding window), every outcome-priority case, row↔message round trip,
+the recorder's command line and QoS overrides.
+*Q: Which outcome rule is easiest to get wrong?* — A: Priority. A goal cancelled by
+the runner for being stuck comes back from Nav2 as "canceled". The reason must be
+the runner's (`stuck`), not Nav2's status (`nav2_aborted`).
+
+**`package.xml`, `setup.py` (changed)** — ROS deps, `ros2bag` and
+`rosbag2_storage_mcap`, PyYAML, and the `eval_runner` and `run_batch` executables.
+*Q: Why depend on `rosbag2_storage_mcap` explicitly?* — A: The MCAP storage plugin is
+what `-s mcap` loads. Without the dependency rosdep might not install it, and
+recording would fail only at runtime.
+
+### src/navstress_monitor (C++)
+
+**`include/navstress_monitor/clearance.hpp`, `src/clearance.cpp`** — ROS-free
+geometry: even-odd point-in-polygon, distance to a segment, signed distance to the
+footprint, minimum clearance over a point set (optionally ignoring points inside the
+footprint), a hysteresis collision tracker that counts rising edges, and a parser
+for Nav2's footprint string.
+*Q: Why ignore points inside the footprint?* — A: On a real robot they are lidar
+returns from the robot's own body. Counting them would report a permanent
+collision.
+
+**`include/navstress_monitor/collision_monitor_node.hpp`,
+`src/collision_monitor_node.cpp`, `src/main.cpp`** — The `navstress_collision_monitor`
+node. It subscribes to any number of LaserScan and PointCloud2 topics (Sensor Data
+QoS) and to odometry, and transforms points into the base frame with tf2 (latest
+transform, since sensors are rigidly mounted). Cloud points are height-filtered.
+Sources older than `source_timeout_s` are ignored. It publishes `/navstress/clearance`
+(best effort) and `/navstress/collision_events` (reliable, rising edges only). The
+default footprint is Carter's Nav2 footprint.
+*Q: Why look up the latest transform instead of the one at the scan's stamp?* — A:
+The sensor→base transform is static, so the latest is exact. It also avoids
+dropping scans whose stamp is slightly newer than the newest TF in the buffer.
+
+**`test/test_clearance.cpp`** — 8 gtests: convex and concave point-in-polygon in
+both windings, segment distance with clamping, signed distance including Carter's
+footprint, self-return filtering, the "no points means invalid, not zero" case,
+hysteresis with two separate collisions, and footprint parsing errors.
+*Q: Why is "no points" invalid rather than zero clearance?* — A: Zero would be a
+collision. No data is not a collision, and it's reported as +inf with
+`in_collision` false.
+
+**`test/test_collision_monitor_node.cpp`** — 2 gtests running the real node with a
+static TF (laser 0.2 m ahead of base_link): the published clearance and closest
+point match hand-computed values in the base frame, and a run of near-touching scans
+produces one event, a second after clearing the hysteresis band.
+*Q: What does this test catch that the geometry tests can't?* — A: The wiring:
+parameter parsing, QoS matching, the TF transform direction, and that the event
+publisher fires once per collision.
+
+**`CMakeLists.txt`, `package.xml` (changed)** — Two libraries (`clearance` with no ROS
+types, and the node), the executable, the plain gtest, an
+`ament_add_ros_isolated_gtest` for the node test, and lint (clang-format, cpplint,
+cppcheck, copyright, xmllint, lint_cmake).
+*Q: Why split the geometry into its own library?* — A: Its tests link without
+rclcpp and run in milliseconds, and the math can be reused without a node.
+
+### src/navstress_agent
+
+**`navstress_agent/cli.py`** — `ros2 run navstress_agent stress_agent`: loads
+`.env` (without overriding the environment), picks the mock or the
+OpenAI-compatible client, reads the goal set, optionally seeds round 1 with a
+baseline run's rows, and runs the agent with the RunBatch client.
+`--list-models` asks the endpoint which models exist.
+*Q: Why refuse to start without a model id instead of picking a default?* — A:
+Free-tier model ids change. A silent default that later disappears would fail
+mid-run; an explicit setting fails at startup with a clear message.
+
+**`package.xml`, `setup.py` (changed)** — Adds `rclpy` and the `stress_agent`
+executable.
+*Q: Does the agent node ever publish to the robot?* — A: No. Its only ROS output is a
+RunBatch goal containing validated scenarios.
+
+### src/navstress_fakesim
+
+**`navstress_fakesim/world.py`** — The fake world: walls, box and cylinder
+obstacles, a square robot that can't move into anything, a 360-ray lidar that only
+sees obstacles at least `lidar_height` tall, and an A* planner (8-connected,
+inflated by the footprint's half-diagonal) straightened by line-of-sight that only
+avoids what the lidar sees.
+*Q: Why make low obstacles invisible to the fake planner?* — A: So the pipeline has a
+real failure to find in CI, of the same shape as the hypothesis. It is a test
+fixture, not evidence about Nav2.
+
+**`navstress_fakesim/fake_sim.py`** — The `fake_sim` node: `simulation_interfaces`
+services (features, reset, spawn one/many from NavStress USDA files, delete,
+get/set entity state, get entities), clean `/scan_raw`, `/odom` and TF (best effort,
+like Isaac Sim), and a fake `navigate_to_pose` server. That server follows the
+plan, replans, counts "recoveries" when blocked, aborts when they run out, and
+applies an invented noise rule.
+*Q: What can a fakesim pass not tell you?* — A: Anything about Nav2's planners,
+costmaps, AMCL or Isaac Sim's sensors and physics. It proves the services, actions,
+QoS, TF, bags, result files, agent and report fit together.
+
+**`config/world.yaml`, `config/goals.yaml`** — A 14 × 8 m room with two shelves, and
+six hand-picked goals with clear straight lines from the start.
+*Q: Why hand-pick fakesim goals instead of sampling them?* — A: With straight,
+unobstructed paths, where a mock obstacle lands relative to the path is
+predictable, so the end-to-end test can rely on low obstacles blocking.
+
+**`test/test_world.py`** — Every goal has a one-segment path; the scan sees walls and
+tall obstacles but not low ones; cylinder ray hits; the planner detours around
+visible obstacles and drives straight through invisible ones; blocking ignores
+height; reset clears obstacles.
+*Q: Why test the fake at all?* — A: If the fake were wrong, the end-to-end test could
+pass or fail for reasons unrelated to the code under test.
+
+**`package.xml`, `setup.py` (changed)** — ROS deps (`tf2_ros_py` for the Python
+broadcasters), the config files and the `fake_sim` executable.
+*Q: Why is the fake a ROS package and not a pytest fixture?* — A: It has to be a
+separate process speaking real ROS interfaces, or the test would bypass the very
+wiring it exists to check.
+
+### src/navstress_bringup
+
+**`launch/navstress_nodes.launch.py`** — Starts scenario_manager, noise_injector,
+obstacle_mover, navstress_collision_monitor and eval_runner with one params file,
+`use_sim_time`, and `results_dir`.
+*Q: Why one params file for all nodes?* — A: The settings that must agree (entity
+prefix, map→world offset, topic names) sit side by side, so a mismatch is visible.
+
+**`launch/fakesim.launch.py`** — The fake simulator plus the NavStress nodes with
+`params/navstress_fakesim.yaml`.
+*Q: How would you run the same pipeline against Isaac Sim?* — A: Same nodes, a
+different params file, and Isaac Sim + Nav2 instead of fake_sim (Phase 3 adds that
+launch file).
+
+**`params/navstress_fakesim.yaml`** — Parameters for the fake: no Nav2 overrides,
+no AMCL, no costmaps, the monitor on the clean `/scan_raw` with a 0.6 m square
+footprint, bag topics with best-effort/latched QoS lists, shorter stuck window.
+*Q: Why does the monitor read `/scan_raw` and not `/scan`?* — A: `/scan` carries the
+injected noise. Safety is measured on the clean data (D18).
+
+**`test/test_e2e_fakesim.py`** — The Phase 2 acceptance test. It launches the
+pipeline in a private ROS domain and runs the real agent loop (mock LLM, 2 rounds,
+≤8 episodes per round) over the RunBatch action. It then checks: round 2 narrows
+onto round 1's weakest family; every episode wrote a row and none failed setup;
+metadata says fakesim; low obstacles fail in the fake; the bags contain `/scan_raw`,
+`/scan`, `/odom` and `/navstress/clearance`. The report built from those files has
+the FAKESIM banner. A second test drives one RunEpisode directly.
+*Q: What did this test find that unit tests didn't?* — A: The rosbag2 QoS mismatch
+(D17): the bags were silently missing best-effort topics. No unit test could see
+it, because it only shows up with real publishers, subscribers and discovery
+timing.
+
+**`CMakeLists.txt`, `package.xml` (changed)** — Install launch and params; register
+the launch test with a 900 s timeout; runtime and test dependencies.
+*Q: Why `add_launch_test` instead of a pytest?* — A: launch_testing starts and stops
+the processes around the test and collects their output, and colcon reports it like
+any other test.
+
+### docs and README (changed)
+
+**`docs/DECISIONS.md`** — D16–D25 (node name, per-topic QoS, clean vs noisy data,
+ApplyScenario strictness, USD assets, outcome rules, bag recording, the fake's
+limits, test isolation, one-shot run ids) and new dependency rows.
+**`docs/OPEN_QUESTIONS.md`** — Q3 resolved (owner identity); Q7–Q12 on Isaac-side
+facts that can only be checked on the pod: robot prim path and teleport, map/world
+alignment, kinematic bodies in `SetEntityState`, floor height, contact sensing,
+and routing the 3D cloud through the noise relay.
+**`README.md`** — Phase 2 done, and how to run the fake pipeline by hand.
+*Q: Why so many open questions about Isaac Sim?* — A: Each is a fact that can only
+be observed on the GPU pod. Writing them down with a default and a check is what
+keeps Phase 4 from discovering them as silent wrong results.
+
+**Package maintainer and copyright lines (changed, all packages)** — Now
+`Akshith Macharla <amacharla@csuchico.edu>`, the identity the owner supplied for
+this repo.

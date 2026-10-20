@@ -4,11 +4,12 @@
   <name>navstress_agent</name>
   <version>0.1.0</version>
   <description>LLM stress-test agent: proposes scenarios, runs batches, narrows onto the weakest family.</description>
-  <maintainer email="amacharla15@users.noreply.github.com">amacharla15</maintainer>
+  <maintainer email="amacharla@csuchico.edu">Akshith Macharla</maintainer>
   <license>Apache-2.0</license>
 
   <exec_depend>navstress_eval</exec_depend>
   <exec_depend>navstress_scenarios</exec_depend>
+  <exec_depend>rclpy</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

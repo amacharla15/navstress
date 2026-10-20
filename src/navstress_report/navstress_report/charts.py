@@ -41,7 +41,8 @@ DARK = Theme(
 THEMES = (LIGHT, DARK)
 
 _DPI = 144
-_FONT = ["system-ui", "DejaVu Sans", "sans-serif"]
+# Bundled with matplotlib, so charts render the same on CI, the pod and laptops.
+_FONT = ["DejaVu Sans"]
 
 
 def _axes(theme: Theme, width_in: float, height_in: float):

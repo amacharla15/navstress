@@ -223,3 +223,216 @@ arrives in Phases 1–2.
 *Q: What breaks if `resource/<pkg>` is missing?* — A: The package still builds, but
 it isn't registered in the ament index, so `ros2 run`, `ros2 launch` and
 `get_package_share_directory()` can't find it.
+
+---
+
+## Phase 1 — schema, agent loop, report (pure Python)
+
+Build/test status for this phase: `colcon build` and `colcon test` pass in the local
+Jazzy container (99 tests, 0 failures). The scenario tests also pass under pydantic
+2.13.5 on Python 3.13, with the same pinned hash. None of this code needs a ROS
+runtime; the ROS wiring comes in Phase 2.
+
+### src/navstress_scenarios
+
+**`navstress_scenarios/schema.py`** — The ScenarioSpec schema and the only door from
+LLM output to the simulator. Numeric fields are clamped to fixed ranges before
+pydantic sees them, and every clamp is reported back. Unknown keys, assets or Nav2
+override names, non-finite numbers, booleans or strings where a number belongs, and
+too many obstacles are rejected with the field path in the message. It also
+canonicalizes and hashes specs (labels excluded) and builds the machine-readable
+schema summary the prompt uses, from the same tables the validator enforces.
+*Q: Why clamp some things and reject others?* — A: A height of 5 m has an obvious
+safe neighbour (the 2 m cap), so clamping keeps a useful scenario and logs the
+change. An unknown field like `cmd_vel` or an asset named "forklift" has no safe
+neighbour; guessing would mean running something nobody asked for.
+
+**`navstress_scenarios/goals.py`** — Loads a map_server map (YAML + image, with the
+same pixel-to-occupancy rule as map_server), marks cells within a robot radius of
+anything non-free as blocked, flood-fills from the start, and samples seeded goals
+only inside the connected region. Also defines `GoalSet`, the named reachable goals
+that validation snaps goals to. A `sample_goals` CLI writes a goal-set YAML with the
+map's sha256 and the sampling parameters recorded.
+*Q: Why isn't "free" good enough for a goal?* — A: A free cell inside a sealed room
+is free but unreachable; a run to it fails for reasons that have nothing to do with
+the navigation stack. Connectivity from the start pose is what "reachable" means.
+
+**`navstress_scenarios/generate.py`** — Builds the baseline set: N scenarios to
+seeded-random goals from the goal set, each with its own seed, and a `make_baseline`
+CLI that writes them as `scenarios.jsonl`.
+*Q: How do you guarantee the Phase 6 rerun uses the identical baseline?* — A: The
+same (goal set, N, seed) produces the same specs and hashes, and the exact specs
+are also stored next to the results, so the rerun reads the file rather than
+regenerating.
+
+**`test/test_schema.py`** — 44 tests: clamping per field with the clamp notes,
+allowlist rejections (asset, override, unknown top-level and obstacle fields, too
+many or duplicate obstacles, NaN/inf, bool/str numbers, bad labels and versions),
+goal resolution against a goal set and a free-space map, yaw normalization, and
+hashing (pinned golden hash, key order and float noise ignored, labels ignored,
+every physical change detected, tamper-proof JSONL round trip).
+*Q: Why pin a literal hash in a test?* — A: Every stored result row carries a hash.
+If a refactor silently changed canonicalization, old and new runs would stop
+matching in before/after comparisons. The pinned value makes that a test failure.
+
+**`test/test_goals.py`** — Builds a two-room PNG map where one room is sealed, then
+checks map coordinates, inflation (including the map edge), that the sealed room is
+free but unreachable, deterministic sampling with separation constraints, loud
+failure when constraints can't be met, YAML round trip, and baseline determinism.
+*Q: Why a synthetic map instead of the real warehouse map?* — A: The test needs a
+known right answer (the sealed room). The real map only exists on the pod, and its
+answer isn't known in advance.
+
+**`package.xml`, `setup.py` (changed)** — Declare pydantic, PyYAML, NumPy and Pillow
+as runtime deps and install the `sample_goals` and `make_baseline` executables.
+*Q: Why `python3-pil` instead of pip's Pillow?* — A: rosdep keys map to apt packages,
+so CI and the pod get the same Ubuntu-built versions without pip in the loop.
+
+### src/navstress_eval
+
+**`navstress_eval/results_io.py`** — The results-file contract: the CSV column order
+(matching EpisodeResult), typed parsing (booleans, ints, `inf` clearance),
+consistency checks (no failure reason on a success, only known reasons on a
+failure), per-episode append, `scenarios.jsonl`, and `run_metadata.json` (git commit
+and dirty flag, ROS distro, simulator and version, GPU from `nvidia-smi`, Nav2 params
+sha256).
+*Q: Why write a row per episode instead of once at the end?* — A: A 50-episode batch
+on Isaac Sim takes an hour. If the node or the pod dies halfway, the finished
+episodes are still on disk with their hashes.
+
+**`navstress_eval/summary.py`** — Per-family statistics (success rate, failure-reason
+counts, collisions, minimum finite clearance, median time to goal, worst cases
+ranked collision > stuck > aborted > timeout), the weakest-family rule, the
+success-vs-value sweep curve, and the boundary as a bracketing pair.
+*Q: Why does an infinite clearance count as "no data" rather than "very safe"?* — A:
+Infinity means the monitor never saw a return. Treating it as a large clearance
+would make a blind run look like the safest one.
+
+**`test/test_results_io.py`, `test/test_summary.py`** — Round trip with types and
+infinity, rejection of inconsistent rows and unexpected headers, run-id format,
+metadata round trip; summary counts, worst-case ordering, weakest-family
+tie-breaks, sweep curves ignoring unknown hashes, and boundary/no-boundary cases.
+*Q: What does "ignoring unknown hashes" protect against?* — A: A result whose
+scenario isn't in the run's spec file can't be placed on the sweep axis. Dropping it
+is honest; guessing its value would invent a data point.
+
+**`package.xml` (changed)** — Adds `navstress_scenarios` (for `get_path`).
+*Q: Why does eval depend on scenarios and not the other way round?* — A: Scenarios
+define inputs; evaluation reads inputs and outputs. Keeping the arrow one way avoids
+an import cycle.
+
+### src/navstress_agent
+
+**`navstress_agent/llm.py`** — `OpenAICompatibleClient` (POST `chat/completions`, GET
+`models`, Bearer auth, optional JSON mode, errors with the HTTP body), configured
+only from `NAVSTRESS_LLM_*` env vars; `extract_json` tolerant of code fences and
+prose; and `MockLLM`, which reads the prompt's `CONTEXT_JSON` line and returns four
+exploration families, or a one-parameter sweep of the focus family's worst case.
+*Q: Isn't a mock that follows instructions too easy?* — A: Yes, deliberately. It
+tests the loop's plumbing and the code-side narrowing, not the model's reasoning.
+Whether a real model proposes good scenarios is a Phase 5 question with logged
+prompts and replies to judge it by.
+
+**`navstress_agent/prompts.py`** — System prompt (role, "you never control the
+robot", reply format) and per-round user messages: budget, exploration or narrowing
+instructions, a results table, the worst cases of the focus family, and a
+`CONTEXT_JSON` line with the schema, goals and start pose.
+*Q: Why put the schema in every request instead of the system prompt?* — A: Each
+request is then self-contained and fully logged, so any reply can be judged against
+exactly what the model was shown.
+
+**`navstress_agent/loop.py`** — `StressAgent`: per round it prompts, parses,
+validates every scenario, drops off-focus scenarios and duplicate hashes, truncates
+to the episode budget round-robin across families, retries with the error when a
+reply is unusable (within the call budget), runs the batch through an injected
+`run_batch` function, summarizes, and narrows the next round onto the weakest
+family. Sweeps get a success curve and a bracketed boundary. Everything goes to
+`agent_log.jsonl`; the final result goes to `agent_summary.json`.
+*Q: Why inject `run_batch` instead of calling ROS directly?* — A: The loop can be
+tested in milliseconds with a fake world and no ROS at all. In Phase 2 the real
+implementation is a RunBatch action client, and the loop doesn't change.
+
+**`test/test_loop.py`** — The required 2-round test: round 1 explores four families;
+the fake world makes `low_obstacle` fail; round 2 runs only `low_obstacle`, sweeps
+`obstacles[0].height` with everything else fixed, and the reported boundary
+brackets the fake world's 0.25 m threshold. Also checks the log's event sequence and
+contents, budget truncation, retry on bad JSON, rejected-but-logged scenarios
+(including `cmd_vel`), off-focus dropping, and the early stop when nothing failed.
+*Q: How do you know the narrowing is done by code and not luck?* — A: One test
+scripts a reply that mixes families in round 2; the off-focus scenario is dropped
+and logged, and only the focus family reaches `run_batch`.
+
+**`test/test_llm.py`** — Runs the HTTP client against a stub server on 127.0.0.1:
+request path, auth header, body and JSON mode; model listing; HTTP and connection
+errors; env-var configuration; JSON extraction; and the mock's context parsing.
+*Q: Does any test call a real LLM?* — A: No (CLAUDE.md rule 4). The only network
+traffic is to a local stub server the test starts itself.
+
+**`package.xml` (changed)** — Adds `navstress_eval` and `navstress_scenarios`.
+*Q: Why is the LLM client in this package and not a shared one?* — A: Only the agent
+talks to an LLM; a separate package for one module would be structure without
+benefit.
+
+### src/navstress_report
+
+**`navstress_report/data.py`** — Loads a run (rows, metadata, specs by hash) or an
+agent run (its summary plus each round's batch directory).
+*Q: Why reload from disk instead of passing results in memory?* — A: The report
+must show what's on disk, the same files a reader can check, never an in-memory
+state that may differ.
+
+**`navstress_report/compare.py`** — Pairs before/after rows by config hash, counts
+unmatched scenarios, and lists per-family rates, regressions and fixes. A hash that
+appears twice in one run is an error.
+*Q: Why pair by hash rather than by row order or scenario id?* — A: Order can change
+and ids are labels. The hash is the configuration itself, so a pair is guaranteed
+to be the same physical scenario.
+
+**`navstress_report/charts.py`** — Three PNG charts, each in light and dark: success
+by family (single-series bars, worst first), the boundary sweep (line with the
+crossing bracket shaded), and before/after per family (ring = before, dot = after).
+*Q: Why both a ring and a color for before/after?* — A: When both values are 100%
+the marks overlap. Shape keeps them distinguishable there, and for readers who
+can't tell the colors apart.
+
+**`navstress_report/render.py`** — Builds the report once as blocks (headings,
+provenance lines, tables, images) and renders them to Markdown and to a
+self-contained HTML page. Every table has a provenance line (results file, git
+commit, simulator, ROS distro, GPU, Nav2 params hash). A FAKESIM banner appears if
+any run came from the fake simulator. Rewrites only the section between its
+begin/end markers, so hand-written parts of RESULTS.md survive.
+*Q: How does the report enforce "every number traces to a results file"?* — A: It
+has no input except results directories, and it prints each table's source path
+and commit right next to it.
+
+**`navstress_report/cli.py`** — `ros2 run navstress_report report --run ... --agent
+... --before ... --after ... --out-md docs/RESULTS.md --site site/`.
+*Q: Why is the static site generated rather than hand-written?* — A: Then the site
+and RESULTS.md can never disagree: both are rendered from the same blocks.
+
+**`test/test_report.py`** — Runs the real agent loop with the mock LLM and a batch
+function that writes real results files into a temp dir, plus a "fixed" rerun of
+the same scenarios. It then checks the Markdown (banner, provenance, tables,
+relative bag links, sweep bracket, hash matching, fixed/regression counts), the
+PNGs, and the HTML. It also checks that reruns keep hand-written sections, that
+comparisons report regressions and unmatched rows, and the CLI argument checks.
+*Q: Isn't generating a report from fake data risky?* — A: It only happens inside the
+test's temp dir, the data is marked `simulator: fakesim`, and the test asserts the
+FAKESIM banner is shown. Nothing from it lands in docs/.
+
+**`package.xml`, `setup.py` (changed)** — Adds matplotlib, eval and scenarios as
+runtime deps, the agent as a test dep, and the `report` executable.
+*Q: Why use the Agg backend?* — A: CI and the pod are headless. Agg renders straight
+to PNG without needing a display.
+
+### docs and README (changed)
+
+**`docs/DECISIONS.md`** — D7–D15 (pydantic v1 API, clamp vs reject and hash rules,
+goal sampler, primitive obstacles, override ranges, CSV, HTTP LLM client, code-side
+narrowing, chart rendering) and the dependency table.
+**`docs/OPEN_QUESTIONS.md`** — Q4 (LLM model id), Q5 (goal-sampling radius), Q6
+(real pallet asset).
+**`README.md`** — Phase 1 marked done.
+*Q: Why list dependencies in a decisions file?* — A: CLAUDE.md requires a one-line
+reason for each. Unexplained dependencies are how a small project ends up with a
+large attack surface.

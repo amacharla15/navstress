@@ -7,6 +7,8 @@
   <maintainer email="amacharla15@users.noreply.github.com">amacharla15</maintainer>
   <license>Apache-2.0</license>
 
+  <exec_depend>navstress_scenarios</exec_depend>
+
   <test_depend>python3-pytest</test_depend>
 
   <export>

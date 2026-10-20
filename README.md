@@ -14,7 +14,7 @@ The full build spec is [SPEC.md](SPEC.md); working rules are in [CLAUDE.md](CLAU
 | Phase | What | State |
 | --- | --- | --- |
 | 0 | colcon workspace, interfaces, CI | done |
-| 1 | schema, agent loop, report (pure Python) | not started |
+| 1 | schema, agent loop, report (pure Python) | done |
 | 2 | ROS nodes + fakesim end-to-end test | not started |
 | 3 | pod setup script + RUNPOD.md | not started |
 | 4–7 | Isaac Sim runs on a GPU pod | not started (needs the pod) |

@@ -17,5 +17,10 @@ setup(
     description="Scenario schema plus scenario_manager, noise_injector, obstacle_mover nodes.",
     license="Apache-2.0",
     extras_require={"test": ["pytest"]},
-    entry_points={"console_scripts": []},
+    entry_points={
+        "console_scripts": [
+            "sample_goals = navstress_scenarios.goals:main",
+            "make_baseline = navstress_scenarios.generate:main",
+        ]
+    },
 )

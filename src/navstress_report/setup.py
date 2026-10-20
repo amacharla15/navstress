@@ -17,5 +17,5 @@ setup(
     description="Turns results files into charts, docs/RESULTS.md and a static site.",
     license="Apache-2.0",
     extras_require={"test": ["pytest"]},
-    entry_points={"console_scripts": []},
+    entry_points={"console_scripts": ["report = navstress_report.cli:main"]},
 )

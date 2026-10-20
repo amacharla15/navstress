@@ -7,6 +7,11 @@
   <maintainer email="amacharla15@users.noreply.github.com">amacharla15</maintainer>
   <license>Apache-2.0</license>
 
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-pil</exec_depend>
+  <exec_depend>python3-pydantic</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
   <test_depend>python3-pytest</test_depend>
 
   <export>

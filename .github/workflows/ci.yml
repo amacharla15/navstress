@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: ruff check
+        run: pipx run ruff==0.17.1 check .
+      - name: ruff format --check
+        run: pipx run ruff==0.17.1 format --check .
+
+  build_and_test:
+    name: colcon build + test (jazzy)
+    runs-on: ubuntu-24.04
+    # setup-ros recommends a clean container; noble is the Jazzy tier-1 platform
+    # and matches the Isaac Sim 6.2 container (see docs/DECISIONS.md).
+    container:
+      image: ubuntu:noble
+    steps:
+      - uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: jazzy
+      - uses: ros-tooling/action-ros-ci@v0.4
+        with:
+          target-ros2-distro: jazzy
+          package-name: >-
+            navstress_interfaces
+            navstress_bringup
+            navstress_scenarios
+            navstress_eval
+            navstress_monitor
+            navstress_agent
+            navstress_report
+            navstress_fakesim

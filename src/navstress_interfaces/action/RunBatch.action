@@ -1,0 +1,15 @@
+# Run a list of scenarios sequentially and write results/<run_id>/results.csv.
+ScenarioSpec[] scenarios
+string run_id          # "" = generate one from the current time
+string label           # free text stored in run metadata, e.g. "baseline"
+bool record_bags
+---
+string run_id
+string results_path
+uint32 episodes_completed
+uint32 successes
+EpisodeResult[] results
+---
+uint32 episodes_done
+uint32 episodes_total
+EpisodeResult last_result

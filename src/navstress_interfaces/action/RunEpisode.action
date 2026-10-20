@@ -1,0 +1,11 @@
+# Apply a scenario, record a bag, drive one NavigateToPose goal and score it.
+ScenarioSpec scenario
+string run_id          # results/<run_id>/ receives the row; "" = do not write files
+bool record_bag
+---
+EpisodeResult result
+---
+string phase           # applying | recording | navigating | finishing
+float64 elapsed_s
+float64 distance_remaining_m
+float64 min_clearance_m

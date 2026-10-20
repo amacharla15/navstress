@@ -1,0 +1,23 @@
+# colcon
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Secrets: only .env.example is committed
+.env
+
+# Run outputs: bags and per-episode files stay local; summaries are committed
+# explicitly with `git add -f` when a phase reports them.
+results/*
+!results/.gitkeep
+!results/README.md
+
+# Generated static site (rebuilt by navstress_report)
+site/

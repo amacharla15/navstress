@@ -1,0 +1,18 @@
+# Repo-wide ruff configuration. Packages are built by colcon (setup.py), so this
+# file only configures tooling; it does not make the repo pip-installable.
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+extend-exclude = ["build", "install", "log", "results", "site"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "navstress_agent",
+    "navstress_eval",
+    "navstress_fakesim",
+    "navstress_report",
+    "navstress_scenarios",
+]

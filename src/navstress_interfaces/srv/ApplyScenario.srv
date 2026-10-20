@@ -1,0 +1,6 @@
+# Reset the simulator and set it up for one scenario. Returns once the robot is
+# localized at the start and the sim is ready for a NavigateToPose goal.
+ScenarioSpec scenario
+---
+bool success
+string message

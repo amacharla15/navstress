@@ -1,0 +1,84 @@
+# NavStress nodes against Isaac Sim 6.2 + Nav2 (Nova Carter, small warehouse).
+# Topic and parameter names come from IsaacSim-ros_workspaces tag IsaacSim-6.2.0
+# (carter_navigation launch + params). NOT YET RUN ON A POD: Phase 4 validates it,
+# and docs/OPEN_QUESTIONS.md lists the values that still need checking there.
+
+scenario_manager:
+  ros__parameters:
+    entity_prefix: /navstress_
+    asset_cache_dir: /tmp/navstress_assets
+    map_to_world: [0.0, 0.0, 0.0]          # Q8: map vs Isaac world frame
+    robot_entity: ""                       # Q7: robot prim path; empty = no teleport
+    noise_injector_nodes: [/noise_injector, /noise_injector_cloud]
+    nav_override_targets:
+      - max_vel_x=/controller_server:FollowPath.max_vel_x
+      - max_vel_theta=/controller_server:FollowPath.max_vel_theta
+      - local_inflation_radius=/local_costmap/local_costmap:inflation_layer.inflation_radius
+      - global_inflation_radius=/global_costmap/global_costmap:inflation_layer.inflation_radius
+    publish_initial_pose: true
+    default_start: [-6.0, -1.0, 3.14159]   # amcl.initial_pose in carter_navigation_params.yaml
+    clear_costmap_services:
+      - /global_costmap/clear_entirely_global_costmap
+      - /local_costmap/clear_entirely_local_costmap
+    settle_time_s: 3.0
+    service_timeout_s: 30.0
+
+# /scan feeds AMCL and the global costmap; pointcloud_to_laserscan now writes /scan_raw.
+noise_injector:
+  ros__parameters:
+    message_type: LaserScan
+    input_topic: /scan_raw
+    output_topic: /scan
+
+# The 3D cloud the local costmap's voxel layer reads (rerouted in a params copy).
+noise_injector_cloud:
+  ros__parameters:
+    message_type: PointCloud2
+    input_topic: /front_3d_lidar/lidar_points
+    output_topic: /navstress/front_3d_lidar/lidar_points
+
+obstacle_mover:
+  ros__parameters:
+    rate_hz: 10.0
+    entity_prefix: /navstress_
+    map_to_world: [0.0, 0.0, 0.0]
+
+eval_runner:
+  ros__parameters:
+    simulator: isaac_sim
+    simulator_version: "6.2.0"
+    odom_topic: /chassis/odom              # Carter's odom_topic in carter_navigation_params.yaml
+    global_frame: map
+    nav_action: navigate_to_pose
+    # Raw point clouds are left out: ~1 MB per message at 10 Hz is ~1 GB per episode.
+    bag_topics:
+      - /tf
+      - /tf_static
+      - /scan_raw
+      - /scan
+      - /chassis/odom
+      - /cmd_vel
+      - /plan
+      - /map
+      - /local_costmap/costmap
+      - /global_costmap/costmap
+      - /navstress/clearance
+      - /navstress/collision_events
+      - /navstress/active_scenario
+    bag_best_effort_topics: [/scan_raw, /scan, /chassis/odom, /navstress/clearance]
+    bag_latched_topics: [/tf_static, /map, /navstress/active_scenario]
+    bag_start_delay_s: 2.0
+    apply_timeout_s: 120.0
+    stuck_window_s: 30.0
+    stuck_radius_m: 0.25
+
+navstress_collision_monitor:
+  ros__parameters:
+    # Clean sensors only: the cloud straight from Isaac Sim, and the 2D lidars if the
+    # scene publishes them (Phase 4 checks; a silent topic just contributes nothing).
+    cloud_topics: [/front_3d_lidar/lidar_points]
+    scan_topics: [/front_2d_lidar/scan, /back_2d_lidar/scan]
+    odom_topic: /chassis/odom
+    base_frame: base_link
+    cloud_min_z: 0.05
+    cloud_max_z: 2.0

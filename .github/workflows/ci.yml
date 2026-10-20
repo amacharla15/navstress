@@ -6,7 +6,7 @@ on:
 
 jobs:
   lint:
-    name: ruff
+    name: ruff + shellcheck
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -14,6 +14,11 @@ jobs:
         run: pipx run ruff==0.17.1 check .
       - name: ruff format --check
         run: pipx run ruff==0.17.1 format --check .
+      - name: shellcheck
+        run: |
+          command -v shellcheck || (sudo apt-get update && sudo apt-get install -y shellcheck)
+          shellcheck --version
+          shellcheck -x docker/*.sh
 
   build_and_test:
     name: colcon build + test (jazzy)

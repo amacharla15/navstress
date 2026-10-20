@@ -29,6 +29,11 @@ def generate_launch_description() -> LaunchDescription:
                 description="where results/<run_id>/ are written (use an absolute path)",
             ),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
+            DeclareLaunchArgument(
+                "nav2_params_file",
+                default_value="",
+                description="Nav2 params in use; its sha256 goes into run metadata",
+            ),  # fmt: skip
             node("navstress_scenarios", "scenario_manager", "scenario_manager"),
             node("navstress_scenarios", "noise_injector", "noise_injector"),
             node("navstress_scenarios", "obstacle_mover", "obstacle_mover"),
@@ -37,7 +42,12 @@ def generate_launch_description() -> LaunchDescription:
                 "navstress_eval",
                 "eval_runner",
                 "eval_runner",
-                [{"results_dir": LaunchConfiguration("results_dir")}],
+                [
+                    {
+                        "results_dir": LaunchConfiguration("results_dir"),
+                        "nav2_params_file": LaunchConfiguration("nav2_params_file"),
+                    }
+                ],
             ),  # fmt: skip
         ]
     )

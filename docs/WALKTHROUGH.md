@@ -745,3 +745,120 @@ keeps Phase 4 from discovering them as silent wrong results.
 **Package maintainer and copyright lines (changed, all packages)** — Now
 `Akshith Macharla <amacharla@csuchico.edu>`, the identity the owner supplied for
 this repo.
+
+---
+
+## Phase 3 — pod setup script and docs scaffolding
+
+Build/test status for this phase: `docker/pod_setup.sh` passes shellcheck 0.9.0
+(Ubuntu 24.04's) and 0.11.0 (latest) with no findings, and CI now runs shellcheck.
+In an Ubuntu 24.04 container standing in for the pod, the script refused to run as a
+non-root user, completed `--dry-run`, and really installed the base packages into an
+apt cache on the "volume". It then stopped cleanly where this sandbox blocks GitHub
+and packages.ros.org. In the Jazzy container its clone + build step built all eight
+NavStress packages from a fresh clone and skipped the rebuild on a second run.
+**The ROS/Nav2 install, the Isaac workspace build and `isaac.launch.py` have not run
+anywhere yet**; that is Phase 4, on the pod. `colcon test`: all packages pass,
+including the new launch-file and Nav2-params tests.
+
+**`docker/pod_setup.sh`** — Sets up a pod running `nvcr.io/nvidia/isaac-sim:6.2.0`.
+It checks Ubuntu 24.04, root, volume, GPU and Isaac Sim, then installs base tools and
+a UTF-8 locale, adds the ROS apt source via `ros2-apt-source` (per the Jazzy guide),
+and installs ROS 2 Jazzy, Nav2, `pointcloud_to_laserscan`, `simulation_interfaces`
+and the MCAP plugin. Debs are cached on the volume. It clones IsaacSim-ros_workspaces
+at `IsaacSim-6.2.0` and builds only the three Carter packages, clones and builds
+NavStress (each rebuilt only when its commit changes), links Isaac Sim's caches onto
+the volume, writes `env.sh`, and hands ownership to uid 1234. Options: `--dry-run`,
+`--with-claude-code`, `--no-cache-links`. It ends by reminding you to stop the pod.
+*Q: What makes a setup script idempotent, concretely?* — A: Every step first checks
+the state it would create (installed debs via dpkg, a clone's `.git`, a build marker
+holding the commit it was built from, a symlink's target) and does nothing if it's
+already right. Re-running is then a cheap verification, and a half-finished run can
+simply be repeated.
+
+**`src/navstress_bringup/launch/isaac.launch.py`** — The pod launch. Isaac Sim
+headless via NVIDIA's `isaacsim_bringup` (with `isaacsim.ros2.sim_control` enabled
+and Carter's scene), Nav2 via `nav2_bringup` with Carter's map and a rerouted copy of
+Carter's params, `pointcloud_to_laserscan` with Carter's exact settings but output
+`/scan_raw`, the NavStress nodes, and a second noise relay for the 3D cloud.
+`launch_isaac:=false` attaches to an Isaac Sim that's already running;
+`nav2_params:=` is where the Phase 6 fix goes in.
+*Q: Why not just include NVIDIA's `carter_navigation.launch.xml`?* — A: It starts
+RViz unconditionally (the pod is headless), and its `/scan` and local-costmap inputs
+come straight from the simulator, so noise couldn't be injected without changing
+NVIDIA's files. The launch copies its settings and changes only those two things.
+
+**`src/navstress_bringup/params/navstress_isaac.yaml`** — NavStress parameters for
+the pod: Carter's odometry topic (`/chassis/odom`), the AMCL initial pose as the
+default start, the Nav2 override targets (controller and both inflation layers), the
+costmap clear services, both noise relays, bag topics with their QoS lists (raw point
+clouds left out for size), and the collision monitor on the clean 3D cloud plus the
+2D lidars if they exist. Unverified values are flagged with their OPEN_QUESTIONS
+numbers.
+*Q: Why is the collision monitor fed the 3D cloud rather than `/scan`?* — A: `/scan`
+is derived from that cloud with a height band and only the front half, and it is the
+noisy topic. The raw cloud is clean, all-round, and height-filtered by the monitor
+itself.
+
+**`src/navstress_bringup/launch/navstress_nodes.launch.py` (changed)** — New
+`nav2_params_file` argument passed to `eval_runner`, so run metadata records which
+Nav2 config was used and its sha256.
+*Q: Why record the Nav2 params hash per run?* — A: Phase 6 compares the same
+scenarios under two Nav2 configs. The hash proves which config each row ran with.
+
+**`src/navstress_scenarios/navstress_scenarios/nav2_params.py`** — Finds every costmap
+observation source in a Nav2 params file, writes a copy with the requested topics
+renamed (and a header listing exactly what changed), named by content hash. Fails if
+a requested topic isn't read by any source.
+*Q: Why fail when a topic isn't found?* — A: If NVIDIA renames the lidar topic in a
+future release, a silent no-op would leave noise injection disconnected while every
+scenario still reported its noise settings. Failing at launch makes that visible.
+
+**`src/navstress_scenarios/test/test_nav2_params.py`** — Against a trimmed copy of
+Carter's costmap structure: only the mapped topic changes, the input isn't mutated,
+the written file is stable and content-named, and a missing topic is an error. (The
+real Carter file was also checked by hand: exactly one key changes.)
+*Q: Why not test against the real Carter file in CI?* — A: It belongs to another
+repository and isn't installed in CI. The trimmed copy keeps the exact nesting the
+code depends on, with its source cited.
+
+**`src/navstress_bringup/test/test_launch_files.py`, `CMakeLists.txt`, `package.xml`
+(changed)** — Imports every launch file and builds its description (including the
+Isaac one, whose package lookups happen only at run time), and checks every params
+file is valid YAML with `ros__parameters`. Registered with `ament_add_pytest_test`;
+`pointcloud_to_laserscan` added as a runtime dependency.
+*Q: What can this catch for a launch file that never runs in CI?* — A: Syntax
+errors, broken imports, renamed or missing launch arguments, and malformed params.
+These are the usual first-five-minutes failures on an expensive GPU pod.
+
+**`docs/RUNPOD.md`** — The owner checklist (RunPod billing and alert, SSH key, LLM key
+as a RunPod secret, optional Claude/NGC accounts, EULA acceptance), then: GPU choice
+(RTX ≥16 GB; not A100/H100, which lack RT cores; driver ≥570.169), the network
+volume, the template (image, entrypoint override to stay headless, disk sizes, env
+vars `ACCEPT_EULA`, `PRIVACY_CONSENT`, `NVIDIA_DRIVER_CAPABILITIES`), SSH and tmux,
+`pod_setup.sh`, the non-root fallback, the run and check commands for Phases 4–5,
+Claude Code on the pod, and stop/terminate with a scheduled auto-stop. Sources
+listed.
+*Q: Why override the container's entrypoint?* — A: The image's entrypoint starts
+Isaac Sim's WebRTC streaming app. SPEC wants headless with no GUI streaming, and
+NavStress needs to start Isaac Sim itself with the sim-control extension.
+
+**`docs/RESULTS.md`, `docs/INTERVIEW.md`** — Scaffolds. RESULTS.md says plainly that
+there are no results yet and lays out the Phase 4–6 sections (the report fills its
+generated section between markers). INTERVIEW.md lists the SPEC topics and where
+each answer will come from.
+*Q: Why create RESULTS.md before there are results?* — A: The report tool rewrites
+only its marked section, so the hand-written bring-up notes from Phase 4 have a home
+that later report runs won't overwrite.
+
+**`.github/workflows/ci.yml` (changed)** — The lint job now also runs shellcheck on
+`docker/*.sh`.
+*Q: Why lint a script that only runs on a pod?* — A: Because it only runs on a pod.
+A quoting bug found in CI costs nothing; found on a rented GPU it costs money and a
+setup cycle.
+
+**`docs/DECISIONS.md`, `docs/OPEN_QUESTIONS.md`, `README.md` (changed)** — D26–D30
+(volume layout and apt cache, root-to-install/uid-1234-to-run, headless start, Nav2
+input rerouting, undeclared pod-only packages); Q13–Q17 (pod user, headless RTX
+rendering, disk size, extension loading, initial pose); Phase 3 marked done, with
+"not yet run on a pod".

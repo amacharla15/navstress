@@ -240,6 +240,60 @@ docs or sources contradict SPEC.md, the docs win and the change is recorded here
 - RunBatch refuses a `run_id` whose `results.csv` already exists. Appending a second
   batch to an old run would mix code versions and configs under one metadata file.
 
+## D26 — Pod setup: apt on the container, everything else on the volume (Phase 3)
+
+- SPEC: install ROS 2 + Nav2 + IsaacSim-ros_workspaces + NavStress "idempotently,
+  onto a persistent network volume". ROS debs install under `/opt/ros`, which is on
+  the container disk that RunPod wipes on stop. So the script keeps apt's download
+  cache on the volume (`Dir::Cache::Archives`): a fresh pod reinstalls from local
+  `.deb`s instead of downloading again. The two colcon workspaces, results and bags,
+  and Isaac Sim's caches live on the volume itself.
+- ROS comes from the official route in the Jazzy install guide (`ros2-apt-source`),
+  and Nav2 as Isaac Sim's Nav2 tutorial installs it (`navigation2`, `nav2-bringup`).
+  A conda/RoboStack prefix on the volume was considered and rejected: it would mix a
+  second toolchain with Isaac Sim's and isn't what NVIDIA's tutorials use.
+- Each step checks before acting (installed debs, clone present, workspace built at
+  the same commit). `--dry-run` prints the plan. Tested here: shellcheck 0.9.0 and
+  0.11.0 clean; dry run end to end in an Ubuntu 24.04 container; base packages, apt
+  cache, locale and the non-root refusal for real; clone + colcon build + "skip if
+  unchanged" for the NavStress workspace in the Jazzy container. Not testable here
+  (no packages.ros.org, no GPU): the ROS install and the Isaac workspace build.
+
+## D27 — Root to install, uid 1234 to run (Phase 3)
+
+- The 6.2 image is built to run as `isaac-sim` (uid 1234); older forum advice to pass
+  `--allow-root` to Kit predates that and is unverified for 6.2. Setup runs as root
+  (apt needs it), then hands the workspaces, results and caches to uid 1234. Isaac
+  Sim and all ROS nodes run as that one user, which also avoids cross-user DDS
+  shared-memory permission errors.
+
+## D28 — Headless Isaac Sim, started by the launch file (Phase 3)
+
+- The image's entrypoint starts the WebRTC streaming app. SPEC says headless with no
+  GUI streaming, so the RunPod template overrides the entrypoint to idle, and
+  `isaac.launch.py` starts Isaac Sim through NVIDIA's `isaacsim_bringup` with
+  `--no-window --enable isaacsim.ros2.sim_control` and the scene URL from
+  `carter_navigation_isaacsim.launch.xml`.
+
+## D29 — Nav2 inputs through the noise relays, via a params copy (Phase 3)
+
+- `/scan` (AMCL, global costmap) is made by `pointcloud_to_laserscan`, so that node
+  publishes `/scan_raw` and a relay publishes `/scan`; no Nav2 param changes. The
+  local costmap's voxel layer reads `/front_3d_lidar/lidar_points` from Isaac Sim, so
+  the launch writes a copy of Carter's params with only that observation topic
+  renamed. On the real Carter file that changes exactly one key. The copy is named by
+  content hash and its path and sha256 go into run metadata. Carter's own file stays
+  untouched as the baseline config; the Phase 6 fix is passed as `nav2_params:=`.
+- All runs, baseline included, go through the relays (zero noise = pass-through), so
+  baseline and noisy scenarios share one topology.
+
+## D30 — Pod-only packages are not declared in package.xml (Phase 3)
+
+- `isaac.launch.py` needs `carter_navigation`, `isaacsim_bringup` and `nav2_bringup`.
+  The first two are not released as debs, so declaring them would make CI's rosdep
+  fail. The launch file looks them up at runtime. A CI test still imports and builds
+  every launch description, so syntax and argument errors are caught before the pod.
+
 ## Dependencies
 
 One line per dependency beyond ROS core, as CLAUDE.md requires.

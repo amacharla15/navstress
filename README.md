@@ -16,7 +16,7 @@ The full build spec is [SPEC.md](SPEC.md); working rules are in [CLAUDE.md](CLAU
 | 0 | colcon workspace, interfaces, CI | done |
 | 1 | schema, agent loop, report (pure Python) | done |
 | 2 | ROS nodes + fakesim end-to-end test | done |
-| 3 | pod setup script + RUNPOD.md | not started |
+| 3 | pod setup script + RUNPOD.md | done (script not yet run on a pod) |
 | 4–7 | Isaac Sim runs on a GPU pod | not started (needs the pod) |
 
 No simulation results exist yet. Nothing in this repo should be read as a measured
@@ -55,3 +55,5 @@ Fakesim output tests the plumbing only; it is not a navigation result.
 - [docs/DESIGN.md](docs/DESIGN.md) — architecture and the costmap-config reading
 - [docs/DECISIONS.md](docs/DECISIONS.md) — choices, evidence, dependencies
 - [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) — unresolved items and defaults taken
+- [docs/RUNPOD.md](docs/RUNPOD.md) — owner checklist and pod procedure (GPU, image, volume, run, stop)
+- [docs/RESULTS.md](docs/RESULTS.md) — empty until Phase 4 runs on the pod

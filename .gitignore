@@ -21,3 +21,6 @@ results/*
 
 # Generated static site (rebuilt by navstress_report)
 site/
+
+# Private study notes and build notes: never committed
+notes/

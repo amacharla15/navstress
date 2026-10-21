@@ -47,7 +47,7 @@ install(DIRECTORY include/ DESTINATION include/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  # clang-format is the C++ formatter for this repo (see CLAUDE.md); uncrustify
+  # clang-format is the C++ formatter for this repo (see docs/DECISIONS.md); uncrustify
   # would fight it over the same lines, so it is switched off.
   set(ament_cmake_uncrustify_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()

@@ -209,7 +209,7 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 Run it inside `tmux` from the repo (`cd /workspace/navstress/ws/src/navstress`, then
 `claude`). Log in through the printed browser link, or set `ANTHROPIC_API_KEY` from
-a RunPod secret. CLAUDE.md applies on the pod too: keep runs batched, and end every
+a RunPod secret. The project rules apply on the pod too: keep runs batched, and end every
 session with the stop reminder.
 
 ## 7. Stop or terminate (do this every session)

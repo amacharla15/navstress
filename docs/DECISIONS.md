@@ -1,7 +1,7 @@
 # Decisions
 
 Each entry: the decision, the evidence, and what would change it. Where official
-docs or sources contradict SPEC.md, the docs win and the change is recorded here.
+docs or sources contradict the build spec, the docs win and the change is recorded here.
 
 ## D1 — ROS 2 distro: Jazzy (Phase 0)
 
@@ -33,7 +33,7 @@ docs or sources contradict SPEC.md, the docs win and the change is recorded here
 
 ## D4 — Linting split: ruff for Python, ament_lint + clang-format for C++ (Phase 0)
 
-- CLAUDE.md: "Lint: ruff for Python, ament_lint / clang-format for C++."
+- Project rules: "Lint: ruff for Python, ament_lint / clang-format for C++."
 - Python packages therefore do not carry the `ament_flake8`/`ament_pep257` test
   wrappers (they would duplicate ruff with conflicting rules). ruff runs as its own
   CI job, pinned to 0.17.1 (latest on PyPI on 2026-10-20).
@@ -296,11 +296,11 @@ docs or sources contradict SPEC.md, the docs win and the change is recorded here
 
 ## Dependencies
 
-One line per dependency beyond ROS core, as CLAUDE.md requires.
+One line per dependency beyond ROS core, as the project rules require.
 
 | Dependency | Package(s) | Why |
 | --- | --- | --- |
-| `ament_cmake_clang_format` | navstress_monitor (test) | Enforces the C++ formatter CLAUDE.md names. |
+| `ament_cmake_clang_format` | navstress_monitor (test) | Enforces the C++ formatter the project rules name. |
 | `python3-pydantic` | navstress_scenarios | SPEC names pydantic for the scenario schema. |
 | `python3-yaml` | navstress_scenarios | Reads map_server map YAML and goal-set files. |
 | `python3-numpy` | navstress_scenarios | Occupancy-grid inflation and flood fill over whole maps. |

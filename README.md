@@ -5,6 +5,13 @@ Isaac Sim small-warehouse sample. You describe a test as a scenario (goal, obsta
 sensor noise); NavStress sets up the simulator through ROS 2, sends the goal to Nav2,
 records an MCAP bag, and scores the run.
 
+##Demo
+<img width="1920" height="1200" alt="front_camera" src="https://github.com/user-attachments/assets/3272f518-082e-4c61-bab1-fbbf92ce5035" />
+
+https://github.com/user-attachments/assets/a1cdb4e0-b596-40bd-9243-c1d6b6638484
+
+
+
 All results are from simulation. What was run and what it shows:
 [docs/RESULTS.md](docs/RESULTS.md).
 

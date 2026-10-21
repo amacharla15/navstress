@@ -154,7 +154,7 @@ class ScenarioManager(Node):
                 SpawnRequest(
                     name=self.prefix + o.name,
                     allow_renaming=False,  # obstacle_mover addresses entities by this name
-                    entity_resource=Resource(uri=str(uri)),
+                    entity_resource=Resource(uri=uri.as_uri()),
                     initial_pose=pose,
                 )
             )

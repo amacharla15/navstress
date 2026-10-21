@@ -144,7 +144,9 @@ class ScenarioManager(Node):
                 o.size_x,
                 o.size_y,
                 o.height,
-                kinematic=o.motion is not None,
+                # Sim-control sets rigid-body velocities, which PhysX rejects for kinematic bodies.
+                # Use collision-only geometry; SetEntityState updates its pose directly.
+                kinematic=False,
             )
             pose = PoseStamped()
             x, y, yaw = map_to_world(o.pose.x, o.pose.y, o.pose.yaw, self.map_to_world)

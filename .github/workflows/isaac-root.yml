@@ -1,0 +1,37 @@
+
+name: Prepare private Isaac Sim image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Install crane
+        run: |
+          curl -fsSL https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz -o /tmp/crane.tar.gz
+          echo "6fedd06a648417d60ed4a9a651280257bb5ad506b369c50ed170e8b9543e5a05b?  /tmp/crane.tar.gz" > /tmp/checksums.txt
+          tar -xzf /tmp/crane.tar.gz -C /usr/local/bin crane
+
+      - name: Log in to private registry
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GH_TOKEN" | crane auth login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Create root-enabled image
+        run: |
+          crane mutate nvcr.io/nvidia/isaac-sim:6.2.0 \
+            --platform linux/amd64 \
+            --user root \
+            --tag ghcr.io/amacharla15/navstress-isaac-root:6.2.0
+
+      - name: Verify root user
+        run: |
+          crane config ghcr.io/amacharla15/navstress-isaac-root:6.2.0 | jq -e '.config.User == "root"'

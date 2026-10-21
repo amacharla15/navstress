@@ -1,0 +1,2 @@
+run_id,scenario_id,family,config_hash,seed,success,failure_reason,nav2_error_code,nav2_error_msg,time_to_goal_s,path_length_m,final_distance_to_goal_m,min_clearance_m,collisions,recoveries_triggered,bag_path,wall_time_s
+phase4_pilot,baseline/000,baseline,705bfa6f95b53f0662d2d9ae07bfcff04bafe137d2cc50c5c53b68cc06500d18,827307999,true,,0,,19.950000000000003,10.338395786046833,0.19797450871323496,0.82833626337179,0,0,bags/000_baseline_000_705bfa6f,39.460619777994

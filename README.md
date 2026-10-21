@@ -1,26 +1,37 @@
 # NavStress
 
-Where does a standard robot navigation stack break, and does a fix actually help?
+A ROS 2 test harness for the Nav2 navigation stack, running NVIDIA's Nova Carter in the
+Isaac Sim small-warehouse sample. You describe a test as a scenario (goal, obstacles,
+sensor noise); NavStress sets up the simulator through ROS 2, sends the goal to Nav2,
+records an MCAP bag, and scores the run.
 
-NavStress drives NVIDIA's Nova Carter through Nav2 in the Isaac Sim small-warehouse
-sample. An LLM agent proposes test scenarios as validated JSON (obstacles, sensor
-noise, goals), the system runs them, and the agent narrows in on the failures. A
-navigation-config fix is then measured on the identical scenario set.
+All results are from simulation. What was run and what it shows:
+[docs/RESULTS.md](docs/RESULTS.md).
 
-The full build spec is [SPEC.md](SPEC.md); working rules are in [CLAUDE.md](CLAUDE.md).
+## Packages
 
-## Status
+| Package | What it does |
+| --- | --- |
+| `navstress_scenarios` | Scenario schema (validated, hashed so a run can be repeated exactly); `scenario_manager`, which spawns, moves and deletes obstacles through Isaac Sim's `simulation_interfaces` services; lidar noise relays; obstacle mover |
+| `navstress_eval` | `RunEpisode` / `RunBatch` actions: apply the scenario, start a bag, send `NavigateToPose`, write `results.csv` |
+| `navstress_monitor` | C++ (rclcpp) node: minimum clearance and collision events from the range sensor, odometry and tf2 |
+| `navstress_fakesim` | Fake simulator and fake Nav2 for CI, so the whole pipeline runs without a GPU |
+| `navstress_report` | Results to markdown tables and charts |
+| `navstress_bringup` | Launch files for Isaac Sim, Nav2 and NavStress, and the CI end-to-end test |
+| `navstress_agent` | An LLM loop that proposes scenarios as validated JSON. Tested only against a mock LLM in CI; not used in the GPU runs |
 
-| Phase | What | State |
-| --- | --- | --- |
-| 0 | colcon workspace, interfaces, CI | done |
-| 1 | schema, agent loop, report (pure Python) | done |
-| 2 | ROS nodes + fakesim end-to-end test | done |
-| 3 | pod setup script + RUNPOD.md | done (script not yet run on a pod) |
-| 4–7 | Isaac Sim runs on a GPU pod | not started (needs the pod) |
+## Verified on a GPU
 
-No simulation results exist yet. Nothing in this repo should be read as a measured
-result until docs/RESULTS.md says otherwise.
+RunPod RTX PRO 4500, Isaac Sim 6.2.0, ROS 2 Jazzy:
+
+- Episodes run end to end through the pipeline, each with an MCAP bag and a results row.
+- Spawned obstacles reach Nav2: with a box near the route the robot steers around it.
+- Lidar noise injection reaches Nav2's inputs (20.2 % of readings dropped for a 20 % setting).
+- Integration bugs found on the GPU and fixed: NumPy values in YAML, `file://` URIs for
+  spawned assets, kinematic bodies rejected by Isaac Sim's set-state service, and a setup
+  script that failed on RunPod volumes.
+- A suspected Nav2 costmap issue (stale marks from deleted obstacles) was tested and is
+  **inconclusive**. Details are in RESULTS.md.
 
 ## Build and test locally (ROS 2 Jazzy, Ubuntu 24.04)
 
@@ -32,28 +43,26 @@ colcon test && colcon test-result --verbose
 pipx run ruff==0.17.1 check . && pipx run ruff==0.17.1 format --check .
 ```
 
-CI runs the same steps (`.github/workflows/ci.yml`), including an end-to-end
-launch test: the fake simulator, every NavStress node, the agent with a mock LLM over
-the RunBatch action, MCAP bags, results files and the report.
+CI runs the same steps (`.github/workflows/ci.yml`), including an end-to-end launch test
+against the fake simulator. Fake-simulator output tests the plumbing only; it is not a
+navigation result.
 
-To watch the CI pipeline by hand:
+## Run on a GPU pod
 
-```bash
-source install/setup.bash
-ros2 launch navstress_bringup fakesim.launch.py results_dir:=$PWD/results
-# second terminal
-ros2 run navstress_agent stress_agent --mock --results-dir $PWD/results \
-  --goals install/navstress_fakesim/share/navstress_fakesim/config/goals.yaml
-ros2 run navstress_report report --agent results/<agent_run_id> --out-md /tmp/fakesim.md
-```
-
-Fakesim output tests the plumbing only; it is not a navigation result.
+[docs/RUNPOD.md](docs/RUNPOD.md): GPU choice, container image, setup script, launching
+Isaac Sim and Nav2, running a batch, and stopping the pod.
 
 ## Docs
 
-- [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md) — every file, what it does and why
-- [docs/DESIGN.md](docs/DESIGN.md) — architecture and the costmap-config reading
-- [docs/DECISIONS.md](docs/DECISIONS.md) — choices, evidence, dependencies
-- [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) — unresolved items and defaults taken
-- [docs/RUNPOD.md](docs/RUNPOD.md) — owner checklist and pod procedure (GPU, image, volume, run, stop)
-- [docs/RESULTS.md](docs/RESULTS.md) — empty until Phase 4 runs on the pod
+- [docs/RESULTS.md](docs/RESULTS.md): what was run and what it shows
+- [docs/DESIGN.md](docs/DESIGN.md): architecture
+- [docs/DECISIONS.md](docs/DECISIONS.md): choices and evidence
+- [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md): unresolved items
+- [docs/RUNPOD.md](docs/RUNPOD.md): pod procedure
+
+## Limitations
+
+- Simulation only. Nothing here is a real-robot or sim-to-real result.
+- One route, single runs per configuration: these are checks, not statistics.
+- Moving obstacles are collision-only geometry repositioned by the set-state service.
+  Sensors see them, but they are not physically simulated bodies.

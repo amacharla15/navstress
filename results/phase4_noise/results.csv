@@ -1,0 +1,2 @@
+run_id,scenario_id,family,config_hash,seed,success,failure_reason,nav2_error_code,nav2_error_msg,time_to_goal_s,path_length_m,final_distance_to_goal_m,min_clearance_m,collisions,recoveries_triggered,bag_path,wall_time_s
+phase4_noise,noise/000,sensor_noise,437478a35e0dac8214ea9e3a38cad3773f6459eded0a8e59b92691610268fc47,827307999,true,,0,,19.883333333,10.35148674688472,0.21285585988358058,0.8248877232187302,0,0,bags/000_noise_000_437478a3,30.832749161985703

@@ -1,0 +1,7 @@
+ghost/000
+waiting for service to become available...
+requester: making request: simulation_interfaces.srv.DeleteEntity_Request(entity='/navstress_ghost_box')
+
+response:
+simulation_interfaces.srv.DeleteEntity_Response(result=simulation_interfaces.msg.Result(result=1, error_message=''))
+

@@ -1,0 +1,3 @@
+ghost_fix_1, ghost_fix_2: clearing=true
+ghost_orig_1, ghost_orig_2, ghost_normal_1: clearing=false
+Original run metadata incorrectly identifies the fixed params file.

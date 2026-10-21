@@ -1,0 +1,19 @@
+{
+  "canceled": false,
+  "created_utc": "2026-10-21T13:30:05+00:00",
+  "episodes_completed": 1,
+  "episodes_planned": 1,
+  "finished_utc": "2026-10-21T13:30:36Z",
+  "git_commit": "1e0300c34cb522da2f971293affbcb62c34fa092",
+  "git_dirty": true,
+  "gpu": "NVIDIA RTX PRO 4500 Blackwell Server Edition, 595.91.07, 32623 MiB",
+  "hostname": "ab6567428396",
+  "label": "phase4_noise",
+  "nav2_params_file": "/workspace/navstress/results/nav2_params/nav2_params_b0caaf81df10.yaml",
+  "nav2_params_sha256": "b0caaf81df10609093a0b3441d4b476398d7b4549f34e870dd47e45ee0f9b0d6",
+  "record_bags": true,
+  "ros_distro": "jazzy",
+  "run_id": "phase4_noise",
+  "simulator": "isaac_sim",
+  "simulator_version": "6.2.0"
+}

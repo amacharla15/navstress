@@ -1,0 +1,2 @@
+run_id,scenario_id,family,config_hash,seed,success,failure_reason,nav2_error_code,nav2_error_msg,time_to_goal_s,path_length_m,final_distance_to_goal_m,min_clearance_m,collisions,recoveries_triggered,bag_path,wall_time_s
+ghost_fix_1,ghost/000,ghost_obstacle,eff1c069b562297c34c91143b93d813417af51b12f6b9cb01faa8eaa800fb535,827307999,true,,0,,19.966666667000002,10.467693470482352,0.24988584101041858,0.5843363404273987,0,0,bags/000_ghost_000_eff1c069,37.04151698600617

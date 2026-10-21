@@ -1,0 +1,11 @@
+BOX MAP POSITION: (-7.182, 9.274)
+BOX ODOM POSITION: (0.691, -10.155)
+Allowing old obstacle markings to decay...
+BEFORE BOX: 0 occupied samples
+SPAWN: simulation_interfaces.srv.SpawnEntities_Response(result=simulation_interfaces.msg.Result(result=1, error_message=''), results=[simulation_interfaces.msg.SpawnResult(result=simulation_interfaces.msg.Result(result=1, error_message=''), entity_name='/navstress_parked_probe')])
+BOX PRESENT: 11 occupied samples
+NEWLY MARKED: 11
+DELETE: simulation_interfaces.srv.DeleteEntity_Response(result=simulation_interfaces.msg.Result(result=1, error_message=''))
+AFTER DELETE +5s: 11/11 newly marked samples remain
+AFTER DELETE +20s: 11/11 newly marked samples remain
+AFTER DELETE +35s: 11/11 newly marked samples remain

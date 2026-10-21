@@ -1,0 +1,2 @@
+run_id,scenario_id,family,config_hash,seed,success,failure_reason,nav2_error_code,nav2_error_msg,time_to_goal_s,path_length_m,final_distance_to_goal_m,min_clearance_m,collisions,recoveries_triggered,bag_path,wall_time_s
+phase4_box_fixed,obstacle/000,static_obstacle,1939b514dfd12cf1b264e4030d9572e5e7a18704e4b78eb8e47c80860bc28153,827307999,true,,0,,19.883333333,10.36374415031643,0.1847634417295884,0.8247026644302332,0,0,bags/000_obstacle_000_1939b514,33.05728341298527

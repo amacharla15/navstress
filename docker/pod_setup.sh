@@ -312,7 +312,8 @@ link_dir() {
   fi
   as_root mkdir -p "${dst}" "$(dirname "${src}")"
   if [[ -d "${src}" && ! -L "${src}" ]]; then
-    as_root cp -a -n "${src}/." "${dst}/"
+    # RunPod network volumes refuse chown, so copy without preserving ownership.
+    as_root cp -a --no-preserve=ownership -n "${src}/." "${dst}/"
     as_root rm -rf "${src}"
   fi
   as_root ln -sfn "${dst}" "${src}"
@@ -356,10 +357,17 @@ hand_over_to_run_user() {
   # uid 1234, and running the ROS nodes as the same user avoids cross-user DDS
   # shared-memory permission problems.
   id "${RUN_USER}" >/dev/null 2>&1 || return 0
-  as_root chown -R "${RUN_UID}:${RUN_UID}" "${NAV_WS}" "${ISAAC_WS_REPO}" "${RESULTS}"
-  if [[ -d "${ROOT}/isaac-sim-cache" ]]; then
-    as_root chown -R "${RUN_UID}:${RUN_UID}" "${ROOT}/isaac-sim-cache"
-  fi
+  local path
+  for path in "${NAV_WS}" "${ISAAC_WS_REPO}" "${RESULTS}" "${ROOT}/isaac-sim-cache"; do
+    [[ -e "${path}" ]] || continue
+    # RunPod network volumes refuse chown even though writes work, so fall back to
+    # making the tree writable by every user instead of aborting the setup.
+    if ! as_root chown -R "${RUN_UID}:${RUN_UID}" "${path}" 2>/dev/null; then
+      warn "chown not permitted on ${path}; making it writable for all users instead"
+      as_root chmod -R a+rwX "${path}" ||
+        warn "chmod failed on ${path}; uid ${RUN_UID} may not be able to write there"
+    fi
+  done
 }
 
 install_claude_code() {

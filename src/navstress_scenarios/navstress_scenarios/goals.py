@@ -233,7 +233,7 @@ class ReachabilityMap:
                 continue
             yaw = rng.uniform(-math.pi, math.pi)
             chosen.append(
-                NamedGoal(f"g{len(chosen):03d}", round(x, 3), round(y, 3), round(yaw, 4))
+                NamedGoal(f"g{len(chosen):03d}", float(round(x, 3)), float(round(y, 3)), round(yaw, 4))
             )
         if len(chosen) < n:
             raise ValueError(f"only {len(chosen)} goals fit the constraints, asked for {n}")
